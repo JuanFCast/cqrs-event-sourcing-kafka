@@ -3,27 +3,29 @@ server:
 
 spring:
   jpa:
-#     MySQL jpa settings
+    # MySQL jpa settings (como lo tenías)
     database-platform: org.hibernate.dialect.MySQL8Dialect
     show-sql: true
     hibernate:
       ddl-auto: update
   datasource:
-    #MySQL datasource settings
-      url: jdbc:mysql://localhost:3306/bankAccount?createDatabaseIfNotExist=true
-      username: root
-      password: techbankRootPsw
+    # MySQL datasource settings (como lo tenías)
+    url: jdbc:mysql://localhost:3306/bankAccount?createDatabaseIfNotExist=true
+    username: root
+    password: techbankRootPsw
   kafka:
+    topic: BankAccountEvents          # <-- CAMBIO 1: Nombre del topic único
     listener:
       ack-mode: MANUAL_IMMEDIATE
+      poll-timeout: 900000            # <-- CAMBIO 2: Timeout extendido para debug
     consumer:
-      bootstrap-servers: localhost:29092
-      group-id: bankaccConsumer
-      auto-offset-reset: earliest
+      bootstrap-servers: localhost:29092 # Asegúrate que este sea tu puerto de Kafka
+      group-id: bankaccConsumer_replay_test       # Mantenemos el group-id
+      auto-offset-reset: earliest     # Esencial para replay
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring:
           json:
             trusted:
-              packages: '*'
+              packages: '*'           # Permite deserializar cualquier paquete (incluye tus eventos)

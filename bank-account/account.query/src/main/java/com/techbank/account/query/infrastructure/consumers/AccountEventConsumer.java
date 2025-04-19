@@ -1,10 +1,8 @@
 package com.techbank.account.query.infrastructure.consumers;
 
-import com.techbank.account.common.events.AccountClosedEvent;
-import com.techbank.account.common.events.AccountOpenedEvent;
-import com.techbank.account.common.events.FundsDepositedEvent;
-import com.techbank.account.common.events.FundsWithdrawnEvent;
+// Ya no se importan eventos específicos aquí
 import com.techbank.account.query.infrastructure.handlers.EventHandler;
+import com.techbank.cqrs.core.events.BaseEvent; // <-- CAMBIO: Importar BaseEvent
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -13,34 +11,28 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AccountEventConsumer implements EventConsumer {
+
     @Autowired
     private EventHandler eventHandler;
 
-    @KafkaListener(topics = "AccountOpenedEvent", groupId = "${spring.kafka.consumer.group-id}")
+    // <-- CAMBIO: Un único @KafkaListener que escucha el topic único del application.yml
+    @KafkaListener(topics = "${spring.kafka.topic}", groupId = "${spring.kafka.consumer.group-id}")
     @Override
-    public void consume(@Payload AccountOpenedEvent event, Acknowledgment ack) {
-        this.eventHandler.on(event);
-        ack.acknowledge();
+    public void consume(@Payload BaseEvent event, Acknowledgment ack) {
+        // <-- CAMBIO: Lógica de reflexión para invocar el método 'on' correcto en el EventHandler
+        try {
+            // Encuentra el método 'on' en EventHandler que coincida con el tipo de evento recibido
+            var handlerMethod = eventHandler.getClass().getDeclaredMethod("on", event.getClass());
+            handlerMethod.setAccessible(true); // Asegura acceso si el método no es público (aunque debería serlo)
+            handlerMethod.invoke(eventHandler, event); // Invoca el método encontrado (ej: on(AccountOpenedEvent))
+            ack.acknowledge(); // Confirma el mensaje a Kafka solo si el procesamiento fue exitoso
+        } catch (Exception e) {
+            // Loggear el error sería ideal aquí
+            // Lanzar RuntimeException asegura que el error no pase desapercibido
+            // y permite que el contenedor de Kafka maneje el reintento o DLQ si está configurado.
+            throw new RuntimeException("Error while consuming event: " + event.getClass().getSimpleName(), e);
+        }
     }
 
-    @KafkaListener(topics = "FundsDepositedEvent", groupId = "${spring.kafka.consumer.group-id}")
-    @Override
-    public void consume(@Payload FundsDepositedEvent event, Acknowledgment ack) {
-        this.eventHandler.on(event);
-        ack.acknowledge();
-    }
-
-    @KafkaListener(topics = "FundsWithdrawnEvent", groupId = "${spring.kafka.consumer.group-id}")
-    @Override
-    public void consume(@Payload FundsWithdrawnEvent event, Acknowledgment ack) {
-        this.eventHandler.on(event);
-        ack.acknowledge();
-    }
-
-    @KafkaListener(topics = "AccountClosedEvent", groupId = "${spring.kafka.consumer.group-id}")
-    @Override
-    public void consume(@Payload AccountClosedEvent event, Acknowledgment ack) {
-        this.eventHandler.on(event);
-        ack.acknowledge();
-    }
+    // Se eliminan los métodos consume específicos para cada evento y sus @KafkaListener individuales
 }
