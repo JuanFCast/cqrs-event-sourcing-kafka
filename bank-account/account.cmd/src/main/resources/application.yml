@@ -7,7 +7,9 @@ spring:
       host: localhost
       port: 27017
       database: bankAccount
+
   kafka:
+    topic: BankAccountEvents            # ← NUEVO: tópico único
     producer:
       bootstrap-servers: localhost:29092
       key-serializer: org.apache.kafka.common.serialization.StringSerializer

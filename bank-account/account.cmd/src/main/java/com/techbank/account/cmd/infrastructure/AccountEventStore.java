@@ -9,6 +9,7 @@ import com.techbank.cqrs.core.exceptions.ConcurrencyException;
 import com.techbank.cqrs.core.infrastructure.EventStore;
 import com.techbank.cqrs.core.producers.EventProducer;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;       // ← NUEVO
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -17,34 +18,48 @@ import java.util.stream.Collectors;
 
 @Service
 public class AccountEventStore implements EventStore {
+
     @Autowired
     private EventProducer eventProducer;
 
     @Autowired
     private EventStoreRepository eventStoreRepository;
 
+    // ← NUEVO: tópico único inyectado
+    @Value("${spring.kafka.topic}")
+    private String topic;
+
     @Override
-    public void saveEvents(String aggregateId, Iterable<BaseEvent> events, int expectedVersion) {
+    public void saveEvents(String aggregateId,
+                           Iterable<BaseEvent> events,
+                           int expectedVersion) {
+
         var eventStream = eventStoreRepository.findByAggregateIdentifier(aggregateId);
-        if (expectedVersion != -1 && eventStream.get(eventStream.size() - 1).getVersion() != expectedVersion) {
+        if (expectedVersion != -1 &&
+                eventStream.get(eventStream.size() - 1).getVersion() != expectedVersion) {
             throw new ConcurrencyException();
         }
+
         var version = expectedVersion;
-        for (var event: events) {
-           version++;
-           event.setVersion(version);
-           var eventModel = EventModel.builder()
-                   .timeStamp(new Date())
-                   .aggregateIdentifier(aggregateId)
-                   .aggregateType(AccountAggregate.class.getTypeName())
-                   .version(version)
-                   .eventType(event.getClass().getTypeName())
-                   .eventData(event)
-                   .build();
-           var persistedEvent = eventStoreRepository.save(eventModel);
-           if (!persistedEvent.getId().isEmpty()) {
-               eventProducer.produce(event.getClass().getSimpleName(), event);
-           }
+        for (var event : events) {
+            version++;
+            event.setVersion(version);
+
+            var eventModel = EventModel.builder()
+                    .timeStamp(new Date())
+                    .aggregateIdentifier(aggregateId)
+                    .aggregateType(AccountAggregate.class.getTypeName())
+                    .version(version)
+                    .eventType(event.getClass().getTypeName())
+                    .eventData(event)
+                    .build();
+
+            var persistedEvent = eventStoreRepository.save(eventModel);
+
+            if (!persistedEvent.getId().isEmpty()) {
+                // ← Cambio: se publica al tópico único
+                eventProducer.produce(topic, event);
+            }
         }
     }
 
@@ -54,7 +69,9 @@ public class AccountEventStore implements EventStore {
         if (eventStream == null || eventStream.isEmpty()) {
             throw new AggregateNotFoundException("Incorrect account ID provided!");
         }
-        return eventStream.stream().map(x -> x.getEventData()).collect(Collectors.toList());
+        return eventStream.stream()
+                .map(EventModel::getEventData)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -63,6 +80,9 @@ public class AccountEventStore implements EventStore {
         if (eventStream == null || eventStream.isEmpty()) {
             throw new IllegalStateException("Could not retrieve event stream from the event store!");
         }
-        return eventStream.stream().map(EventModel::getAggregateIdentifier).distinct().collect(Collectors.toList());
+        return eventStream.stream()
+                .map(EventModel::getAggregateIdentifier)
+                .distinct()
+                .collect(Collectors.toList());
     }
 }
